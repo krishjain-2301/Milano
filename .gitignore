@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+data/
+*.egg-info/
+dist/
+build/
+.idea/
+.vscode/
+eval_results.json

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CNS Hybrid Messenger</title>
+  <style>
+    :root {
+      --bg: #070b12;
+      --panel: #101826;
+      --panel-2: #162033;
+      --line: #243044;
+      --text: #e8eef8;
+      --muted: #8aa0b8;
+      --accent: #3ee0c5;
+      --accent-2: #7aa2ff;
+      --danger: #ff6b7a;
+      --warn: #f5c16c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
+      background: radial-gradient(1200px 600px at 10% -10%, #14304a 0%, transparent 50%),
+                  radial-gradient(900px 500px at 110% 10%, #0d3d36 0%, transparent 40%), var(--bg);
+      color: var(--text); min-height: 100vh;
+    }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 16px 24px; border-bottom: 1px solid var(--line);
+      background: rgba(7,11,18,.7); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 2;
+    }
+    h1 { font-size: 16px; margin: 0; letter-spacing: .08em; text-transform: uppercase; }
+    h1 span { color: var(--accent); }
+    .pill { font-size: 12px; color: var(--muted); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; }
+    main { display: grid; grid-template-columns: 320px 1fr 360px; gap: 16px; padding: 16px; max-width: 1440px; margin: 0 auto; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 12px; }
+    input, select, button, textarea {
+      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+      background: var(--panel-2); color: var(--text); margin: 0 0 8px;
+    }
+    button { cursor: pointer; font-weight: 600; }
+    button.primary { background: linear-gradient(90deg, #1dd1b4, #54a0ff); color: #041016; border: 0; }
+    button.ghost { background: transparent; }
+    button.danger { background: #3a1820; color: var(--danger); border-color: #5a2430; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; }
+    .peer, .sess {
+      padding: 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+    }
+    .sess.active, .peer:hover { border-color: var(--accent); }
+    .chat { display: flex; flex-direction: column; height: calc(100vh - 120px); }
+    .log { flex: 1; overflow: auto; padding: 8px; }
+    .bubble { max-width: 80%; padding: 10px 12px; border-radius: 14px; margin: 8px 0; font-size: 14px; }
+    .me { margin-left: auto; background: #1b3a36; }
+    .them { background: #1b2740; }
+    .bad { background: #3a1820; color: var(--danger); }
+    .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
+    .ok { color: var(--accent); }
+    .no { color: var(--danger); }
+    .tiny { font-size: 12px; color: var(--muted); line-height: 1.45; }
+    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } .chat { height: 60vh; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>CNS <span>Hybrid Messenger</span></h1>
+    <div class="pill" id="status">locked workstation</div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Identity</h2>
+      <p class="tiny">Private keys stay on this PC. Encrypted messages and files travel over <b>FTP</b> to the hub PC. The SQLite database lives only on the hub at <code>data/coordinator/cns.sqlite</code>.</p>
+      <input id="hub" placeholder="Hub PC LAN IP (e.g. 192.168.1.10)" />
+      <button onclick="saveHub()">Connect to hub (FTP + coordinator)</button>
+      <input id="user" placeholder="username (alice / bob)" />
+      <input id="pass" type="password" placeholder="vault password" />
+      <div class="row">
+        <button class="primary" onclick="registerUser()">Register</button>
+        <button onclick="loginUser()">Unlock</button>
+      </div>
+      <h2>Peers</h2>
+      <div id="peers"></div>
+      <select id="construction">
+        <option value="proposed">Proposed pipeline</option>
+        <option value="baseline">Baseline (no custom stages)</option>
+      </select>
+      <button class="primary" onclick="startSession()">Open session with selected peer</button>
+      <div id="sessions"></div>
+      <button class="danger" onclick="expireSession()">Expire session</button>
+    </section>
+    <section class="card chat">
+      <h2>Secure channel</h2>
+      <div class="log" id="log"></div>
+      <div class="row">
+        <input id="msg" placeholder="Message plaintext (encrypted on this PC)" />
+        <button class="primary" onclick="sendMsg()">Send</button>
+      </div>
+      <div class="row">
+        <input type="file" id="file" />
+        <button onclick="sendFile()">Send encrypted file (FTP)</button>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Evaluation</h2>
+      <p class="tiny">Compares proposed CT1–CT5 construction against concatenate-then-HKDF baseline.</p>
+      <button class="primary" onclick="runEval()">Run security metrics</button>
+      <div id="eval"></div>
+    </section>
+  </main>
+  <script>
+    let selectedPeer = null, selectedSid = null, poll = null;
+    async function api(path, opt={}) {
+      const r = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opt });
+      const t = await r.text();
+      let j; try { j = JSON.parse(t); } catch { j = { detail: t }; }
+      if (!r.ok) throw new Error(j.detail || t);
+      return j;
+    }
+    async function refreshState() {
+      const s = await api("/api/state");
+      document.getElementById("status").textContent =
+        `${s.workstation} · ${s.unlocked ? s.username + " unlocked" : "locked"} · FTP ${s.ftp_host}:${s.ftp_port}`;
+      if (s.hub && s.hub !== "127.0.0.1") document.getElementById("hub").value = s.hub;
+      if (s.unlocked) { await loadPeers(); await loadSessions(); }
+    }
+    async function saveHub() {
+      await api("/api/hub", { method: "POST", body: JSON.stringify({ hub: hub.value }) });
+      await refreshState();
+    }
+      await api("/api/register", { method: "POST", body: JSON.stringify({ username: user.value, password: pass.value }) });
+      await refreshState();
+    }
+    async function loginUser() {
+      await api("/api/login", { method: "POST", body: JSON.stringify({ username: user.value, password: pass.value }) });
+      await refreshState();
+    }
+    async function loadPeers() {
+      const peers = await api("/api/peers");
+      document.getElementById("peers").innerHTML = peers.map(p =>
+        `<div class="peer" onclick="selectedPeer='${p.user_id}';loadPeers()">${p.username}<div class="meta">${p.user_id.slice(0,8)}</div></div>`
+      ).join("") || '<p class="tiny">No other users yet. Register the second workstation.</p>';
+    }
+    async function startSession() {
+      if (!selectedPeer) return alert("Select a peer");
+      const s = await api("/api/sessions", { method: "POST", body: JSON.stringify({ peer_id: selectedPeer, construction: construction.value }) });
+      selectedSid = s.session_id;
+      await loadSessions();
+      startPoll();
+    }
+    async function loadSessions() {
+      const list = await api("/api/sessions");
+      document.getElementById("sessions").innerHTML = list.map(s =>
+        `<div class="sess ${s.session_id===selectedSid?'active':''}" onclick="pick('${s.session_id}')">
+          ${s.peer_name || 'peer'} · ${s.construction} · ${s.status}
+          <div class="meta">${s.session_id.slice(0,8)} · ${s.role || ''} ${s.ready?'· keys ready':''}</div>
+        </div>`
+      ).join("");
+    }
+    function pick(sid) { selectedSid = sid; loadSessions(); loadInbox(); startPoll(); }
+    async function loadInbox() {
+      if (!selectedSid) return;
+      const rows = await api(`/api/sessions/${selectedSid}/messages`);
+      const log = document.getElementById("log");
+      log.innerHTML = rows.map(m => {
+                const bad = (m.status && String(m.status).startsWith("rejected")) || m.status==="replay";
+        const cls = bad ? "bad" : (m.from_me ? "me" : "them");
+        const extra = m.kind==="file" && m.file_id
+          ? `<div class="meta"><a style="color:var(--accent)" href="/api/sessions/${selectedSid}/download/${m.file_id}">download plaintext</a></div>` : "";
+        return `<div class="bubble ${cls}"><div>${escapeHtml(m.text || m.kind)}</div><div class="meta">seq ${m.seq} · ${m.kind} · ${m.status}</div>${extra}</div>`;
+      }).join("");
+      log.scrollTop = log.scrollHeight;
+    }
+    async function sendMsg() {
+      if (!selectedSid) return;
+      await api(`/api/sessions/${selectedSid}/messages`, { method: "POST", body: JSON.stringify({ text: msg.value }) });
+      msg.value = "";
+      await loadInbox();
+    }
+    async function sendFile() {
+      if (!selectedSid) return;
+      const f = document.getElementById("file").files[0];
+      if (!f) return;
+      const fd = new FormData(); fd.append("file", f);
+      const r = await fetch(`/api/sessions/${selectedSid}/files`, { method: "POST", body: fd });
+      if (!r.ok) throw new Error(await r.text());
+      await loadInbox();
+    }
+    async function expireSession() {
+      if (!selectedSid) return;
+      await api(`/api/sessions/${selectedSid}/expire`, { method: "POST" });
+      selectedSid = null; document.getElementById("log").innerHTML = "";
+      await loadSessions();
+    }
+    async function runEval() {
+      const data = await api("/api/eval", { method: "POST" });
+      document.getElementById("eval").innerHTML = `<table><tr><th>Property</th><th>Baseline</th><th>Proposed</th></tr>` +
+        data.table.map(r => `<tr><td>${r.property}</td><td>${fmt(r.baseline)}</td><td>${fmt(r.proposed)}</td></tr>`).join("") + "</table>";
+    }
+    function fmt(v) {
+      if (v === true) return '<span class="ok">yes</span>';
+      if (v === false) return '<span class="no">no</span>';
+      return v;
+    }
+    function escapeHtml(s) { return String(s).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c])); }
+    function startPoll() {
+      if (poll) clearInterval(poll);
+      poll = setInterval(async () => { try { await loadSessions(); await loadInbox(); } catch(e) {} }, 1500);
+    }
+    refreshState().catch(console.error);
+  </script>
+</body>
+</html>
