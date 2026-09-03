@@ -30,6 +30,7 @@ class ChallengeBody(BaseModel):
 class VerifyBody(BaseModel):
     username: str
     signature: str
+    mldsa_signature: str
 
 
 class SessionBody(BaseModel):
@@ -40,6 +41,11 @@ class SessionBody(BaseModel):
     mlkem_ct: str
     session_id: str
     signature: str
+    mldsa_signature: str
+    prekey_id: str
+
+class PrekeyBody(BaseModel):
+    prekeys: list[dict]
 
 
 class MessageBody(BaseModel):
@@ -62,6 +68,15 @@ def health():
         "database": str(DATA_DIR / "coordinator" / "cns.sqlite"),
     }
 
+def require_auth(request: Request) -> str:
+    auth = request.headers.get("Authorization")
+    if not auth or not auth.startswith("Bearer "):
+        raise HTTPException(401, "missing authorization")
+    token = auth.split(" ")[1]
+    user_id = db.get_token_user(token)
+    if not user_id:
+        raise HTTPException(401, "invalid token")
+    return user_id
 
 @app.post("/register")
 async def register(request: Request):
@@ -95,6 +110,7 @@ async def challenge(request: Request):
 
 @app.post("/auth/verify")
 async def verify(request: Request):
+    from cns.crypto import mldsa_verify
     payload = VerifyBody.model_validate(await request.json())
     user = db.get_user_by_name(payload.username)
     if not user:
@@ -105,17 +121,23 @@ async def verify(request: Request):
     ok = ed25519_verify(bytes.fromhex(user["ed25519_pk"]), bytes.fromhex(nonce), bytes.fromhex(payload.signature))
     if not ok:
         raise HTTPException(401, "bad signature")
+    ok2 = mldsa_verify(bytes.fromhex(user["mldsa_pk"]), bytes.fromhex(nonce), bytes.fromhex(payload.mldsa_signature))
+    if not ok2:
+        raise HTTPException(401, "bad mldsa signature")
     token = os.urandom(16).hex()
+    db.save_token(token, user["user_id"])
     return {"ok": True, "user": user, "token": token}
 
 
 @app.get("/users")
-def users():
+def users(request: Request):
+    require_auth(request)
     return db.list_users()
 
 
 @app.get("/users/{user_id}")
-def user(user_id: str):
+def user(request: Request, user_id: str):
+    require_auth(request)
     u = db.get_user(user_id)
     if not u:
         raise HTTPException(404, "not found")
@@ -124,6 +146,8 @@ def user(user_id: str):
 
 @app.post("/sessions")
 async def create_session(request: Request):
+    require_auth(request)
+    from cns.crypto import mldsa_verify
     payload = SessionBody.model_validate(await request.json())
     initiator = db.get_user(payload.initiator_id)
     if not initiator:
@@ -135,9 +159,12 @@ async def create_session(request: Request):
         + payload.construction
         + payload.eph_x25519_pk
         + payload.mlkem_ct
+        + payload.prekey_id
     ).encode()
     if not ed25519_verify(bytes.fromhex(initiator["ed25519_pk"]), transcript, bytes.fromhex(payload.signature)):
         raise HTTPException(401, "invalid session signature")
+    if not mldsa_verify(bytes.fromhex(initiator["mldsa_pk"]), transcript, bytes.fromhex(payload.mldsa_signature)):
+        raise HTTPException(401, "invalid mldsa session signature")
     db.create_session(
         {
             "session_id": payload.session_id,
@@ -147,13 +174,17 @@ async def create_session(request: Request):
             "eph_x25519_pk": payload.eph_x25519_pk,
             "mlkem_ct": payload.mlkem_ct,
             "status": "pending",
+            "signature": payload.signature,
+            "mldsa_signature": payload.mldsa_signature,
+            "prekey_id": payload.prekey_id,
         }
     )
     return {"ok": True, "session_id": payload.session_id}
 
 
 @app.post("/sessions/{session_id}/accept")
-def accept(session_id: str):
+def accept(request: Request, session_id: str):
+    require_auth(request)
     sess = db.get_session(session_id)
     if not sess:
         raise HTTPException(404, "session not found")
@@ -162,7 +193,8 @@ def accept(session_id: str):
 
 
 @app.post("/sessions/{session_id}/expire")
-async def expire(session_id: str, request: Request):
+async def expire(request: Request, session_id: str):
+    require_auth(request)
     payload = ExpireBody.model_validate(await request.json())
     sess = db.get_session(session_id)
     if not sess:
@@ -174,12 +206,14 @@ async def expire(session_id: str, request: Request):
 
 
 @app.get("/sessions")
-def list_sessions(user_id: str):
+def list_sessions(request: Request, user_id: str):
+    require_auth(request)
     return db.sessions_for(user_id)
 
 
 @app.get("/sessions/{session_id}")
-def get_session(session_id: str):
+def get_session(request: Request, session_id: str):
+    require_auth(request)
     sess = db.get_session(session_id)
     if not sess:
         raise HTTPException(404, "session not found")
@@ -187,7 +221,8 @@ def get_session(session_id: str):
 
 
 @app.post("/sessions/{session_id}/messages")
-async def post_message(session_id: str, request: Request):
+async def post_message(request: Request, session_id: str):
+    require_auth(request)
     envelope = MessageBody.model_validate(await request.json())
     sess = db.get_session(session_id)
     if not sess:
@@ -223,5 +258,22 @@ async def post_message(session_id: str, request: Request):
 
 
 @app.get("/sessions/{session_id}/messages")
-def get_messages(session_id: str):
+def get_messages(request: Request, session_id: str):
+    require_auth(request)
     return db.messages(session_id)
+
+@app.post("/prekeys")
+async def upload_prekeys(request: Request):
+    user_id = require_auth(request)
+    body = PrekeyBody.model_validate(await request.json())
+    recs = [{"id": pk["id"], "user_id": user_id, "x25519_pk": pk["x25519_pk"], "mlkem_ek": pk["mlkem_ek"]} for pk in body.prekeys]
+    db.add_prekeys(recs)
+    return {"ok": True}
+
+@app.get("/prekeys/{peer_id}")
+def get_prekey(request: Request, peer_id: str):
+    require_auth(request)
+    pk = db.pop_prekey(peer_id)
+    if not pk:
+        raise HTTPException(404, "no prekeys available")
+    return pk

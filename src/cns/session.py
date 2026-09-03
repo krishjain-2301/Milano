@@ -16,6 +16,8 @@ class SessionOffer:
     construction: str
     eph_x25519_pk: bytes
     mlkem_ct: bytes
+    prekey_id: str
+
 
 
 def open_session(
@@ -25,6 +27,7 @@ def open_session(
     peer_id: str,
     peer_x25519_pk: bytes,
     peer_mlkem_ek: bytes,
+    peer_prekey_id: str,
     construction: str = CONSTRUCTION_PROPOSED,
 ) -> tuple[SessionOffer, SessionKeys, bytes]:
     eph_sk, eph_pk = generate_x25519()
@@ -53,6 +56,7 @@ def open_session(
         construction=construction,
         eph_x25519_pk=eph_pk,
         mlkem_ct=mlkem_ct,
+        prekey_id=peer_prekey_id,
     )
     return offer, keys, serialize_eph(eph_sk)
 
@@ -60,9 +64,13 @@ def open_session(
 def accept_session(
     me: IdentityKeySet,
     offer: SessionOffer,
+    responder_x25519_sk: bytes,
+    responder_mlkem_dk: bytes,
 ) -> SessionKeys:
-    ss_x = x25519_shared(me.x25519_sk, offer.eph_x25519_pk)
-    ss_k = mlkem_decaps(me.mlkem_dk, offer.mlkem_ct)
+    from cryptography.hazmat.primitives.asymmetric import x25519
+    sk = x25519.X25519PrivateKey.from_private_bytes(responder_x25519_sk)
+    ss_x = x25519_shared(sk, offer.eph_x25519_pk)
+    ss_k = mlkem_decaps(responder_mlkem_dk, offer.mlkem_ct)
     ctx = session_context(
         session_id=offer.session_id,
         initiator_id=offer.initiator_id,

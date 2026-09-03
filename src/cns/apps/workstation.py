@@ -96,18 +96,29 @@ class Workstation:
     def locked(self) -> bool:
         return self.keys is None
 
+    def upload_prekeys(self) -> None:
+        from cns.crypto import generate_x25519, serialize_x25519_sk
+        from kyber_py.ml_kem import ML_KEM_768
+        import uuid
+        prekeys = []
+        p = self.root / "prekeys.json"
+        privs = json.loads(p.read_text()) if p.exists() else {}
+        for _ in range(10):
+            pid = str(uuid.uuid4())
+            x_sk, x_pk = generate_x25519()
+            ek, dk = ML_KEM_768.keygen()
+            prekeys.append({"id": pid, "x25519_pk": x_pk.hex(), "mlkem_ek": ek.hex()})
+            privs[pid] = {"x25519_sk": serialize_x25519_sk(x_sk).hex(), "mlkem_dk": dk.hex()}
+        p.write_text(json.dumps(privs))
+        self.client.post("/prekeys", json={"prekeys": prekeys})
+
     def register(self, username: str, password: str) -> dict:
         keys = create_identity_vault(self.root, password)
         pub = keys.public_bundle()
         r = self.client.post("/register", json={"username": username, **pub})
         if r.status_code >= 400:
             raise HTTPException(r.status_code, r.text)
-        data = r.json()
-        self.keys = keys
-        self.user_id = data["user_id"]
-        self.username = username
-        (self.root / "profile.json").write_text(json.dumps({"user_id": self.user_id, "username": username}))
-        return data
+        return self.login(username, password)
 
     def login(self, username: str, password: str) -> dict:
         try:
@@ -119,13 +130,19 @@ class Workstation:
             raise HTTPException(chal.status_code, chal.text)
         nonce = bytes.fromhex(chal.json()["nonce"])
         sig = ed25519_sign(keys.ed25519_sk, nonce)
-        ver = self.client.post("/auth/verify", json={"username": username, "signature": sig.hex()})
+        from cns.crypto import mldsa_sign
+        mldsa_sig = mldsa_sign(keys.mldsa_sk, nonce)
+        ver = self.client.post("/auth/verify", json={"username": username, "signature": sig.hex(), "mldsa_signature": mldsa_sig.hex()})
         if ver.status_code >= 400:
             raise HTTPException(ver.status_code, ver.text)
-        user = ver.json()["user"]
+        data = ver.json()
+        user = data["user"]
         self.keys = keys
         self.user_id = user["user_id"]
         self.username = username
+        self.client.headers["Authorization"] = f"Bearer {data['token']}"
+        (self.root / "profile.json").write_text(json.dumps({"user_id": self.user_id, "username": username}))
+        self.upload_prekeys()
         return user
 
     def _need(self) -> IdentityKeySet:
@@ -141,12 +158,18 @@ class Workstation:
     def start_session(self, peer_id: str, construction: str) -> dict:
         me = self._need()
         peer = self.client.get(f"/users/{peer_id}").json()
+        prekey_r = self.client.get(f"/prekeys/{peer_id}")
+        if prekey_r.status_code >= 400:
+            raise HTTPException(404, "peer has no prekeys available")
+        prekey = prekey_r.json()
+        
         offer, keys, _eph = open_session(
             me,
             my_id=self.user_id or "",
             peer_id=peer_id,
-            peer_x25519_pk=bytes.fromhex(peer["x25519_pk"]),
-            peer_mlkem_ek=bytes.fromhex(peer["mlkem_ek"]),
+            peer_x25519_pk=bytes.fromhex(prekey["x25519_pk"]),
+            peer_mlkem_ek=bytes.fromhex(prekey["mlkem_ek"]),
+            peer_prekey_id=prekey["id"],
             construction=construction,
         )
         transcript = (
@@ -156,8 +179,11 @@ class Workstation:
             + offer.construction
             + offer.eph_x25519_pk.hex()
             + offer.mlkem_ct.hex()
+            + offer.prekey_id
         ).encode()
         sig = ed25519_sign(me.ed25519_sk, transcript)
+        from cns.crypto import mldsa_sign
+        mldsa_sig = mldsa_sign(me.mldsa_sk, transcript)
         r = self.client.post(
             "/sessions",
             json={
@@ -168,11 +194,13 @@ class Workstation:
                 "eph_x25519_pk": offer.eph_x25519_pk.hex(),
                 "mlkem_ct": offer.mlkem_ct.hex(),
                 "signature": sig.hex(),
+                "mldsa_signature": mldsa_sig.hex(),
+                "prekey_id": offer.prekey_id,
             },
         )
         if r.status_code >= 400:
             raise HTTPException(r.status_code, r.text)
-        self.sessions[offer.session_id] = LiveSession(
+        live = LiveSession(
             meta={
                 "session_id": offer.session_id,
                 "initiator_id": offer.initiator_id,
@@ -184,7 +212,9 @@ class Workstation:
             },
             keys=keys,
         )
-        return self.sessions[offer.session_id].meta
+        self._load_session(live)
+        self.sessions[offer.session_id] = live
+        return live.meta
 
     def ingest_remote_sessions(self) -> list[dict]:
         me = self._need()
@@ -202,13 +232,35 @@ class Workstation:
                     construction=sess["construction"],
                     eph_x25519_pk=bytes.fromhex(sess["eph_x25519_pk"]),
                     mlkem_ct=bytes.fromhex(sess["mlkem_ct"]),
+                    prekey_id=sess["prekey_id"],
                 )
-                keys = accept_session(me, offer)
+                initiator = self.client.get(f"/users/{sess['initiator_id']}").json()
+                transcript = (
+                    offer.session_id
+                    + offer.initiator_id
+                    + offer.responder_id
+                    + offer.construction
+                    + offer.eph_x25519_pk.hex()
+                    + offer.mlkem_ct.hex()
+                    + offer.prekey_id
+                ).encode()
+                from cns.crypto import ed25519_verify, mldsa_verify
+                if not ed25519_verify(bytes.fromhex(initiator["ed25519_pk"]), transcript, bytes.fromhex(sess["signature"])):
+                    continue
+                if not mldsa_verify(bytes.fromhex(initiator["mldsa_pk"]), transcript, bytes.fromhex(sess["mldsa_signature"])):
+                    continue
+                
+                p = self.root / "prekeys.json"
+                privs = json.loads(p.read_text()) if p.exists() else {}
+                my_prekey = privs.get(offer.prekey_id)
+                if not my_prekey:
+                    continue
+                
+                keys = accept_session(me, offer, bytes.fromhex(my_prekey["x25519_sk"]), bytes.fromhex(my_prekey["mlkem_dk"]))
                 if sess["status"] == "pending":
                     self.client.post(f"/sessions/{sid}/accept")
                     sess["status"] = "active"
-                initiator = self.client.get(f"/users/{sess['initiator_id']}").json()
-                self.sessions[sid] = LiveSession(
+                live = LiveSession(
                     meta={
                         "session_id": sid,
                         "initiator_id": sess["initiator_id"],
@@ -220,6 +272,8 @@ class Workstation:
                     },
                     keys=keys,
                 )
+                self._load_session(live)
+                self.sessions[sid] = live
         listed = []
         for sess in remote:
             sid = sess["session_id"]
@@ -269,6 +323,7 @@ class Workstation:
             live.send_seq -= 1
             raise HTTPException(r.status_code, r.text)
         live.sent_plain[live.send_seq] = text
+        self._save_session(live)
         return {"ftp_blob_id": blob_id, "seq": live.send_seq}
 
     def send_file(self, session_id: str, filename: str, data: bytes) -> dict:
@@ -299,6 +354,7 @@ class Workstation:
         if r.status_code >= 400:
             live.send_seq -= 1
             raise HTTPException(r.status_code, r.text)
+        self._save_session(live)
         return {"file_id": file_id, "seq": live.send_seq, "filename": filename}
 
     def inbox(self, session_id: str) -> list[dict]:
@@ -370,7 +426,26 @@ class Workstation:
             else:
                 item["text"] = pt.decode("utf-8", errors="replace")
             out.append(item)
+        self._save_session(live)
         return out
+
+    def _save_session(self, live: LiveSession) -> None:
+        p = self.root / "sessions" / f"{live.meta['session_id']}.json"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "send_seq": live.send_seq,
+            "recv_highest": live.recv.highest,
+            "recv_seen": list(live.recv.seen),
+        }
+        p.write_text(json.dumps(data))
+
+    def _load_session(self, live: LiveSession) -> None:
+        p = self.root / "sessions" / f"{live.meta['session_id']}.json"
+        if p.exists():
+            data = json.loads(p.read_text())
+            live.send_seq = data.get("send_seq", 0)
+            live.recv.highest = data.get("recv_highest", -1)
+            live.recv.seen = set(data.get("recv_seen", []))
 
     def expire(self, session_id: str) -> None:
         self._need()

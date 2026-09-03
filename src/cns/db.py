@@ -27,7 +27,21 @@ CREATE TABLE IF NOT EXISTS sessions (
   eph_x25519_pk TEXT NOT NULL,
   mlkem_ct TEXT NOT NULL,
   status TEXT NOT NULL,
+  signature TEXT NOT NULL,
+  mldsa_signature TEXT NOT NULL,
+  prekey_id TEXT NOT NULL,
   created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS tokens (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS prekeys (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  x25519_pk TEXT NOT NULL,
+  mlkem_ek TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,8 +114,8 @@ class CoordinatorDB:
     def create_session(self, sess: dict) -> None:
         with self._lock, self.conn:
             self.conn.execute(
-                """INSERT INTO sessions (session_id, initiator_id, responder_id, construction, eph_x25519_pk, mlkem_ct, status)
-                   VALUES (:session_id, :initiator_id, :responder_id, :construction, :eph_x25519_pk, :mlkem_ct, :status)""",
+                """INSERT INTO sessions (session_id, initiator_id, responder_id, construction, eph_x25519_pk, mlkem_ct, status, signature, mldsa_signature, prekey_id)
+                   VALUES (:session_id, :initiator_id, :responder_id, :construction, :eph_x25519_pk, :mlkem_ct, :status, :signature, :mldsa_signature, :prekey_id)""",
                 sess,
             )
 
@@ -148,3 +162,33 @@ class CoordinatorDB:
                    VALUES (:file_id, :session_id, :filename, :size, :sender_id)""",
                 rec,
             )
+
+    def save_token(self, token: str, user_id: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO tokens (token, user_id) VALUES (?, ?)",
+                (token, user_id),
+            )
+
+    def get_token_user(self, token: str) -> str | None:
+        cur = self.conn.execute("SELECT user_id FROM tokens WHERE token = ?", (token,))
+        row = cur.fetchone()
+        return row["user_id"] if row else None
+
+    def add_prekeys(self, prekeys: list[dict]) -> None:
+        with self._lock, self.conn:
+            self.conn.executemany(
+                """INSERT INTO prekeys (id, user_id, x25519_pk, mlkem_ek)
+                   VALUES (:id, :user_id, :x25519_pk, :mlkem_ek)""",
+                prekeys,
+            )
+
+    def pop_prekey(self, user_id: str) -> dict | None:
+        with self._lock:
+            cur = self.conn.execute("SELECT * FROM prekeys WHERE user_id = ? LIMIT 1", (user_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            with self.conn:
+                self.conn.execute("DELETE FROM prekeys WHERE id = ?", (row["id"],))
+            return dict(row)

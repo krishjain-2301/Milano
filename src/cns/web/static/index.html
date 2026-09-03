@@ -4,64 +4,101 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CNS Hybrid Messenger</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #070b12;
-      --panel: #101826;
-      --panel-2: #162033;
-      --line: #243044;
-      --text: #e8eef8;
-      --muted: #8aa0b8;
-      --accent: #3ee0c5;
-      --accent-2: #7aa2ff;
-      --danger: #ff6b7a;
-      --warn: #f5c16c;
+      --bg: #030712;
+      --panel: rgba(17, 24, 39, 0.7);
+      --panel-2: rgba(31, 41, 55, 0.5);
+      --line: rgba(255, 255, 255, 0.08);
+      --text: #f3f4f6;
+      --muted: #9ca3af;
+      --accent: #14b8a6;
+      --accent-hover: #0d9488;
+      --accent-grad: linear-gradient(135deg, #2dd4bf, #3b82f6);
+      --danger: #ef4444;
+      --danger-grad: linear-gradient(135deg, #ef4444, #b91c1c);
+      --font-body: 'Inter', system-ui, sans-serif;
+      --font-head: 'Outfit', system-ui, sans-serif;
     }
     * { box-sizing: border-box; }
     body {
-      margin: 0; font-family: "Segoe UI", system-ui, sans-serif;
-      background: radial-gradient(1200px 600px at 10% -10%, #14304a 0%, transparent 50%),
-                  radial-gradient(900px 500px at 110% 10%, #0d3d36 0%, transparent 40%), var(--bg);
+      margin: 0; font-family: var(--font-body);
+      background: radial-gradient(circle at 15% 50%, rgba(45, 212, 191, 0.15), transparent 25%),
+                  radial-gradient(circle at 85% 30%, rgba(59, 130, 246, 0.15), transparent 25%), 
+                  var(--bg);
       color: var(--text); min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
     }
     header {
       display: flex; justify-content: space-between; align-items: center;
-      padding: 16px 24px; border-bottom: 1px solid var(--line);
-      background: rgba(7,11,18,.7); backdrop-filter: blur(12px); position: sticky; top: 0; z-index: 2;
+      padding: 16px 32px; border-bottom: 1px solid var(--line);
+      background: rgba(3, 7, 18, 0.7); backdrop-filter: blur(16px); 
+      position: sticky; top: 0; z-index: 10;
+      box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
     }
-    h1 { font-size: 16px; margin: 0; letter-spacing: .08em; text-transform: uppercase; }
-    h1 span { color: var(--accent); }
-    .pill { font-size: 12px; color: var(--muted); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; }
-    main { display: grid; grid-template-columns: 320px 1fr 360px; gap: 16px; padding: 16px; max-width: 1440px; margin: 0 auto; }
-    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 12px; }
-    input, select, button, textarea {
-      width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
-      background: var(--panel-2); color: var(--text); margin: 0 0 8px;
+    h1 { font-family: var(--font-head); font-size: 20px; margin: 0; font-weight: 700; letter-spacing: 0.5px; }
+    h1 span { background: var(--accent-grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .pill { font-size: 12px; font-weight: 500; color: var(--accent); border: 1px solid rgba(45,212,191,0.3); background: rgba(45,212,191,0.1); padding: 6px 12px; border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px; }
+    main { display: grid; grid-template-columns: 320px 1fr 340px; gap: 24px; padding: 32px; max-width: 1500px; margin: 0 auto; }
+    .card { 
+      background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 24px;
+      backdrop-filter: blur(12px); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-    button { cursor: pointer; font-weight: 600; }
-    button.primary { background: linear-gradient(90deg, #1dd1b4, #54a0ff); color: #041016; border: 0; }
-    button.ghost { background: transparent; }
-    button.danger { background: #3a1820; color: var(--danger); border-color: #5a2430; }
-    .row { display: flex; gap: 8px; }
-    .row > * { flex: 1; }
+    .card:hover { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); transform: translateY(-2px); }
+    h2 { font-family: var(--font-head); font-size: 14px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text); margin: 0 0 16px; display: flex; align-items: center; gap: 8px; }
+    h2::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    input, select, textarea {
+      width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--panel-2); color: var(--text); margin: 0 0 12px;
+      font-family: var(--font-body); font-size: 14px; transition: all 0.2s ease;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--accent); background: rgba(17, 24, 39, 0.8); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.1); }
+    button { 
+      width: 100%; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line);
+      background: rgba(255,255,255,0.05); color: var(--text); margin: 0 0 12px;
+      font-family: var(--font-body); font-size: 14px; font-weight: 600; cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    button:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+    button:active { transform: translateY(1px); }
+    button.primary { background: var(--accent-grad); color: #fff; border: none; box-shadow: 0 4px 15px rgba(45, 212, 191, 0.3); }
+    button.primary:hover { box-shadow: 0 6px 20px rgba(45, 212, 191, 0.4); opacity: 0.95; }
+    button.danger { background: var(--danger-grad); color: #fff; border: none; }
+    button.danger:hover { box-shadow: 0 4px 15px rgba(239, 68, 68, 0.3); }
+    .row { display: flex; gap: 12px; margin-bottom: 12px; }
+    .row > * { flex: 1; margin-bottom: 0; }
     .peer, .sess {
-      padding: 10px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 8px; cursor: pointer;
+      padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; cursor: pointer;
+      background: var(--panel-2); transition: all 0.2s ease;
     }
-    .sess.active, .peer:hover { border-color: var(--accent); }
-    .chat { display: flex; flex-direction: column; height: calc(100vh - 120px); }
-    .log { flex: 1; overflow: auto; padding: 8px; }
-    .bubble { max-width: 80%; padding: 10px 12px; border-radius: 14px; margin: 8px 0; font-size: 14px; }
-    .me { margin-left: auto; background: #1b3a36; }
-    .them { background: #1b2740; }
-    .bad { background: #3a1820; color: var(--danger); }
-    .meta { font-size: 11px; color: var(--muted); margin-top: 4px; }
-    table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    th, td { border-bottom: 1px solid var(--line); padding: 8px; text-align: left; }
-    .ok { color: var(--accent); }
-    .no { color: var(--danger); }
-    .tiny { font-size: 12px; color: var(--muted); line-height: 1.45; }
-    @media (max-width: 1100px) { main { grid-template-columns: 1fr; } .chat { height: 60vh; } }
+    .peer:hover { border-color: var(--muted); transform: translateX(4px); }
+    .sess.active { border-color: var(--accent); background: rgba(45,212,191,0.05); box-shadow: inset 4px 0 0 var(--accent); }
+    .sess:hover:not(.active) { border-color: var(--muted); transform: translateX(4px); }
+    .chat { display: flex; flex-direction: column; height: calc(100vh - 140px); }
+    .log { flex: 1; overflow-y: auto; padding: 16px; border-radius: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--line); margin-bottom: 16px; display: flex; flex-direction: column; }
+    .log::-webkit-scrollbar { width: 6px; }
+    .log::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+    .bubble { max-width: 75%; padding: 12px 16px; border-radius: 16px; margin: 6px 0; font-size: 14px; line-height: 1.5; animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
+    @keyframes popIn { 0% { opacity: 0; transform: translateY(10px) scale(0.95); } 100% { opacity: 1; transform: translateY(0) scale(1); } }
+    .me { margin-left: auto; background: var(--accent-grad); color: #fff; border-bottom-right-radius: 4px; box-shadow: 0 4px 15px rgba(45, 212, 191, 0.2); }
+    .them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+    .bad { align-self: center; background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid rgba(239, 68, 68, 0.2); text-align: center; font-size: 13px; }
+    .meta { font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 6px; display: flex; gap: 8px; align-items: center; }
+    .me .meta { color: rgba(255,255,255,0.8); justify-content: flex-end; }
+    table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); }
+    th { background: rgba(255,255,255,0.05); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+    th, td { padding: 12px; text-align: left; border-bottom: 1px solid var(--line); }
+    tr:last-child td { border-bottom: none; }
+    .ok { color: var(--accent); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .ok::before { content: '✓'; }
+    .no { color: var(--danger); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+    .no::before { content: '✕'; }
+    .tiny { font-size: 13px; color: var(--muted); line-height: 1.6; margin-bottom: 16px; }
+    a { color: var(--accent); text-decoration: none; transition: opacity 0.2s; }
+    a:hover { opacity: 0.8; }
+    @media (max-width: 1200px) { main { grid-template-columns: 1fr; } .chat { height: 60vh; } }
   </style>
 </head>
 <body>
@@ -130,6 +167,7 @@
       await api("/api/hub", { method: "POST", body: JSON.stringify({ hub: hub.value }) });
       await refreshState();
     }
+    async function registerUser() {
       await api("/api/register", { method: "POST", body: JSON.stringify({ username: user.value, password: pass.value }) });
       await refreshState();
     }
