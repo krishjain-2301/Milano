@@ -398,16 +398,14 @@ class Workstation:
                 continue
             seq = int(payload["seq"])
             proposed = live.meta["construction"] != CONSTRUCTION_BASELINE
-            if proposed and seq in live.seen_payloads:
-                item["status"] = "replay"
-                item["text"] = "[replay rejected]"
-                out.append(item)
-                continue
-            if proposed and not live.recv.accept(seq):
-                item["status"] = "replay"
-                item["text"] = "[replay/window rejected]"
-                out.append(item)
-                continue
+            
+            if proposed and seq not in live.seen_payloads:
+                if not live.recv.accept(seq):
+                    item["status"] = "replay"
+                    item["text"] = "[replay/window rejected]"
+                    out.append(item)
+                    continue
+
             try:
                 pt = decrypt_payload(keys, payload)
             except Exception:

@@ -71,11 +71,11 @@ def _fresh_pair():
 def evaluate() -> dict:
     alice, bob = _fresh_pair()
     offer_p, keys_p, _ = open_session(
-        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, construction=CONSTRUCTION_PROPOSED
+        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, peer_prekey_id="test_id", construction=CONSTRUCTION_PROPOSED
     )
     keys_p_b = accept_session(bob, offer_p)
     offer_b, keys_b, _ = open_session(
-        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, construction=CONSTRUCTION_BASELINE
+        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, peer_prekey_id="test_id", construction=CONSTRUCTION_BASELINE
     )
     keys_b_b = accept_session(bob, offer_b)
 
@@ -131,7 +131,7 @@ def evaluate() -> dict:
 
     # Session isolation: keys from another session cannot decrypt
     offer2, keys2, _ = open_session(
-        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, construction=CONSTRUCTION_PROPOSED
+        alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, peer_prekey_id="test_id", construction=CONSTRUCTION_PROPOSED
     )
     sess_iso = True
     try:

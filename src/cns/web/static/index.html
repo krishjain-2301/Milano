@@ -73,9 +73,8 @@
       padding: 12px 16px; border: 1px solid var(--line); border-radius: 12px; margin-bottom: 12px; cursor: pointer;
       background: var(--panel-2); transition: all 0.2s ease;
     }
-    .peer:hover { border-color: var(--muted); transform: translateX(4px); }
-    .sess.active { border-color: var(--accent); background: rgba(45,212,191,0.05); box-shadow: inset 4px 0 0 var(--accent); }
-    .sess:hover:not(.active) { border-color: var(--muted); transform: translateX(4px); }
+    .peer.active, .sess.active { border-color: var(--accent); background: rgba(45,212,191,0.05); box-shadow: inset 4px 0 0 var(--accent); }
+    .peer:hover:not(.active), .sess:hover:not(.active) { border-color: var(--muted); transform: translateX(4px); }
     .chat { display: flex; flex-direction: column; height: calc(100vh - 140px); }
     .log { flex: 1; overflow-y: auto; padding: 16px; border-radius: 12px; background: rgba(0,0,0,0.2); border: 1px solid var(--line); margin-bottom: 16px; display: flex; flex-direction: column; }
     .log::-webkit-scrollbar { width: 6px; }
@@ -164,29 +163,37 @@
       if (s.unlocked) { await loadPeers(); await loadSessions(); }
     }
     async function saveHub() {
-      await api("/api/hub", { method: "POST", body: JSON.stringify({ hub: hub.value }) });
-      await refreshState();
+      try {
+        await api("/api/hub", { method: "POST", body: JSON.stringify({ hub: document.getElementById("hub").value }) });
+        await refreshState();
+      } catch (e) { alert(e.message); }
     }
     async function registerUser() {
-      await api("/api/register", { method: "POST", body: JSON.stringify({ username: user.value, password: pass.value }) });
-      await refreshState();
+      try {
+        await api("/api/register", { method: "POST", body: JSON.stringify({ username: document.getElementById("user").value, password: document.getElementById("pass").value }) });
+        await refreshState();
+      } catch (e) { alert(e.message); }
     }
     async function loginUser() {
-      await api("/api/login", { method: "POST", body: JSON.stringify({ username: user.value, password: pass.value }) });
-      await refreshState();
+      try {
+        await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.getElementById("user").value, password: document.getElementById("pass").value }) });
+        await refreshState();
+      } catch (e) { alert(e.message); }
     }
     async function loadPeers() {
       const peers = await api("/api/peers");
       document.getElementById("peers").innerHTML = peers.map(p =>
-        `<div class="peer" onclick="selectedPeer='${p.user_id}';loadPeers()">${p.username}<div class="meta">${p.user_id.slice(0,8)}</div></div>`
+        `<div class="peer ${selectedPeer === p.user_id ? 'active' : ''}" onclick="selectedPeer='${p.user_id}';loadPeers()">${p.username}<div class="meta">${p.user_id.slice(0,8)}</div></div>`
       ).join("") || '<p class="tiny">No other users yet. Register the second workstation.</p>';
     }
     async function startSession() {
       if (!selectedPeer) return alert("Select a peer");
-      const s = await api("/api/sessions", { method: "POST", body: JSON.stringify({ peer_id: selectedPeer, construction: construction.value }) });
-      selectedSid = s.session_id;
-      await loadSessions();
-      startPoll();
+      try {
+        const s = await api("/api/sessions", { method: "POST", body: JSON.stringify({ peer_id: selectedPeer, construction: document.getElementById("construction").value }) });
+        selectedSid = s.session_id;
+        await loadSessions();
+        startPoll();
+      } catch (e) { alert(e.message); }
     }
     async function loadSessions() {
       const list = await api("/api/sessions");
@@ -213,29 +220,38 @@
     }
     async function sendMsg() {
       if (!selectedSid) return;
-      await api(`/api/sessions/${selectedSid}/messages`, { method: "POST", body: JSON.stringify({ text: msg.value }) });
-      msg.value = "";
-      await loadInbox();
+      try {
+        const msgInput = document.getElementById("msg");
+        await api(`/api/sessions/${selectedSid}/messages`, { method: "POST", body: JSON.stringify({ text: msgInput.value }) });
+        msgInput.value = "";
+        await loadInbox();
+      } catch (e) { alert(e.message); }
     }
     async function sendFile() {
       if (!selectedSid) return;
-      const f = document.getElementById("file").files[0];
-      if (!f) return;
-      const fd = new FormData(); fd.append("file", f);
-      const r = await fetch(`/api/sessions/${selectedSid}/files`, { method: "POST", body: fd });
-      if (!r.ok) throw new Error(await r.text());
-      await loadInbox();
+      try {
+        const f = document.getElementById("file").files[0];
+        if (!f) return;
+        const fd = new FormData(); fd.append("file", f);
+        const r = await fetch(`/api/sessions/${selectedSid}/files`, { method: "POST", body: fd });
+        if (!r.ok) throw new Error(await r.text());
+        await loadInbox();
+      } catch (e) { alert(e.message); }
     }
     async function expireSession() {
       if (!selectedSid) return;
-      await api(`/api/sessions/${selectedSid}/expire`, { method: "POST" });
-      selectedSid = null; document.getElementById("log").innerHTML = "";
-      await loadSessions();
+      try {
+        await api(`/api/sessions/${selectedSid}/expire`, { method: "POST" });
+        selectedSid = null; document.getElementById("log").innerHTML = "";
+        await loadSessions();
+      } catch (e) { alert(e.message); }
     }
     async function runEval() {
-      const data = await api("/api/eval", { method: "POST" });
-      document.getElementById("eval").innerHTML = `<table><tr><th>Property</th><th>Baseline</th><th>Proposed</th></tr>` +
-        data.table.map(r => `<tr><td>${r.property}</td><td>${fmt(r.baseline)}</td><td>${fmt(r.proposed)}</td></tr>`).join("") + "</table>";
+      try {
+        const data = await api("/api/eval", { method: "POST" });
+        document.getElementById("eval").innerHTML = `<table><tr><th>Property</th><th>Baseline</th><th>Proposed</th></tr>` +
+          data.table.map(r => `<tr><td>${r.property}</td><td>${fmt(r.baseline)}</td><td>${fmt(r.proposed)}</td></tr>`).join("") + "</table>";
+      } catch (e) { alert(e.message); }
     }
     function fmt(v) {
       if (v === true) return '<span class="ok">yes</span>';
