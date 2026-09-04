@@ -73,11 +73,12 @@ def evaluate() -> dict:
     offer_p, keys_p, _ = open_session(
         alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, peer_prekey_id="test_id", construction=CONSTRUCTION_PROPOSED
     )
-    keys_p_b = accept_session(bob, offer_p)
+    from cns.crypto import serialize_x25519_sk
+    keys_p_b = accept_session(bob, offer_p, serialize_x25519_sk(bob.x25519_sk), bob.mlkem_dk)
     offer_b, keys_b, _ = open_session(
         alice, my_id="A", peer_id="B", peer_x25519_pk=bob.x25519_pk, peer_mlkem_ek=bob.mlkem_ek, peer_prekey_id="test_id", construction=CONSTRUCTION_BASELINE
     )
-    keys_b_b = accept_session(bob, offer_b)
+    keys_b_b = accept_session(bob, offer_b, serialize_x25519_sk(bob.x25519_sk), bob.mlkem_dk)
 
     assert keys_p.a2b.msg == keys_p_b.a2b.msg
     assert keys_b.a2b.msg == keys_b_b.a2b.msg

@@ -201,7 +201,20 @@ async def expire(request: Request, session_id: str):
         raise HTTPException(404, "session not found")
     if payload.actor_id not in (sess["initiator_id"], sess["responder_id"]):
         raise HTTPException(403, "not a participant")
+        
+    msgs = db.messages(session_id)
+    for m in msgs:
+        file_id = m.get("file_id") or m["payload"].get("ftp_file_id") or m["payload"].get("ftp_blob_id")
+        if file_id:
+            p = DATA_DIR / "ftp" / f"{file_id}.bin"
+            try:
+                if p.exists():
+                    p.unlink()
+            except Exception:
+                pass
+                
     db.set_status(session_id, "expired")
+    db.delete_messages(session_id)
     return {"ok": True}
 
 

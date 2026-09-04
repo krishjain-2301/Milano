@@ -155,6 +155,11 @@ class CoordinatorDB:
             rows.append(item)
         return rows
 
+    def delete_messages(self, session_id: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+            self.conn.execute("DELETE FROM files WHERE session_id = ?", (session_id,))
+
     def add_file(self, rec: dict) -> None:
         with self._lock, self.conn:
             self.conn.execute(
