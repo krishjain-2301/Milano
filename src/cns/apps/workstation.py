@@ -113,6 +113,9 @@ class Workstation:
         self.client.post("/prekeys", json={"prekeys": prekeys})
 
     def register(self, username: str, password: str) -> dict:
+        from cns.identity import vault_path
+        if vault_path(self.root).exists():
+            raise HTTPException(400, "A vault already exists on this PC. Please click Unlock instead.")
         keys = create_identity_vault(self.root, password)
         pub = keys.public_bundle()
         r = self.client.post("/register", json={"username": username, **pub})
@@ -144,6 +147,16 @@ class Workstation:
         (self.root / "profile.json").write_text(json.dumps({"user_id": self.user_id, "username": username}))
         self.upload_prekeys()
         return user
+
+    def wipe(self) -> None:
+        self.keys = None
+        self.user_id = None
+        self.username = None
+        self.sessions.clear()
+        import shutil
+        if self.root.exists():
+            shutil.rmtree(self.root, ignore_errors=True)
+        self.root.mkdir(parents=True, exist_ok=True)
 
     def _need(self) -> IdentityKeySet:
         if not self.keys or not self.user_id:
@@ -470,6 +483,11 @@ def create_app(name: str, port: int) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def index():
         return (STATIC / "index.html").read_text(encoding="utf-8")
+
+    @app.post("/api/wipe")
+    def api_wipe():
+        ws.wipe()
+        return {"ok": True}
 
     @app.get("/api/state")
     def state():

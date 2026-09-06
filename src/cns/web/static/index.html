@@ -116,6 +116,7 @@
       <div class="row">
         <button class="primary" onclick="registerUser()">Register</button>
         <button onclick="loginUser()">Unlock</button>
+        <button style="background:var(--red)" onclick="wipeUser()">Wipe PC</button>
       </div>
       <h2>Peers</h2>
       <div id="peers"></div>
@@ -160,6 +161,7 @@
       document.getElementById("status").textContent =
         `${s.workstation} · ${s.unlocked ? s.username + " unlocked" : "locked"} · FTP ${s.ftp_host}:${s.ftp_port}`;
       if (s.hub && s.hub !== "127.0.0.1") document.getElementById("hub").value = s.hub;
+      if (s.username && !document.getElementById("user").value) document.getElementById("user").value = s.username;
       if (s.unlocked) { await loadPeers(); await loadSessions(); }
     }
     async function saveHub() {
@@ -177,6 +179,15 @@
     async function loginUser() {
       try {
         await api("/api/login", { method: "POST", body: JSON.stringify({ username: document.getElementById("user").value, password: document.getElementById("pass").value }) });
+        await refreshState();
+      } catch (e) { alert(e.message); }
+    }
+    async function wipeUser() {
+      if(!confirm("Are you sure you want to completely wipe the keys on this PC?")) return;
+      try {
+        await api("/api/wipe", { method: "POST" });
+        document.getElementById("user").value = "";
+        document.getElementById("pass").value = "";
         await refreshState();
       } catch (e) { alert(e.message); }
     }
