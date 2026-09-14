@@ -374,6 +374,7 @@ class Workstation:
         live = self._live(session_id)
         rows = self.client.get(f"/sessions/{session_id}/messages").json()
         out = []
+        this_poll_seen_seqs = set()
         for row in rows:
             payload = row["payload"]
             mine = payload["sender_id"] == self.user_id
@@ -412,12 +413,20 @@ class Workstation:
             seq = int(payload["seq"])
             proposed = live.meta["construction"] != CONSTRUCTION_BASELINE
             
-            if proposed and seq not in live.seen_payloads:
-                if not live.recv.accept(seq):
+            if proposed:
+                if seq in this_poll_seen_seqs:
                     item["status"] = "replay"
-                    item["text"] = "[replay/window rejected]"
+                    item["text"] = "[replay/duplicate rejected]"
                     out.append(item)
                     continue
+                this_poll_seen_seqs.add(seq)
+                
+                if seq not in live.seen_payloads:
+                    if not live.recv.accept(seq):
+                        item["status"] = "replay"
+                        item["text"] = "[replay/window rejected]"
+                        out.append(item)
+                        continue
 
             try:
                 pt = decrypt_payload(keys, payload)
@@ -545,6 +554,19 @@ def create_app(name: str, port: int) -> FastAPI:
     @app.get("/api/sessions/{sid}/messages")
     def api_inbox(sid: str):
         return ws.inbox(sid)
+
+    @app.post("/api/sessions/{sid}/hack_replay")
+    def api_hack_replay(sid: str):
+        ws._need()
+        msgs = ws.client.get(f"/sessions/{sid}/messages").json()
+        if not msgs: return {"ok": False}
+        last_msg = msgs[-1]
+        post_data = {"payload": last_msg["payload"]}
+        if "file_id" in last_msg:
+            for k in ["file_id", "filename", "size"]:
+                if k in last_msg: post_data[k] = last_msg[k]
+        ws.client.post(f"/sessions/{sid}/messages", json=post_data)
+        return {"ok": True}
 
     @app.post("/api/sessions/{sid}/files")
     async def api_file(sid: str, file: UploadFile = File(...)):

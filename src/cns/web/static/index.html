@@ -134,6 +134,7 @@
       <div class="row">
         <input id="msg" placeholder="Message plaintext (encrypted on this PC)" />
         <button class="primary" onclick="sendMsg()">Send</button>
+        <button onclick="hackReplay()" style="background:var(--red)" title="Manually demonstrate a Replay Attack by cloning the last message in the database">Hack: Replay</button>
       </div>
       <div class="row">
         <input type="file" id="file" />
@@ -232,9 +233,18 @@
     async function sendMsg() {
       if (!selectedSid) return;
       try {
-        const msgInput = document.getElementById("msg");
-        await api(`/api/sessions/${selectedSid}/messages`, { method: "POST", body: JSON.stringify({ text: msgInput.value }) });
-        msgInput.value = "";
+        const text = document.getElementById("msg").value;
+        if (!text) return;
+        await api(`/api/sessions/${selectedSid}/messages`, { method: "POST", body: JSON.stringify({ text }) });
+        document.getElementById("msg").value = "";
+        await loadInbox();
+      } catch (e) { alert(e.message); }
+    }
+    async function hackReplay() {
+      if (!selectedSid) return;
+      try {
+        await api(`/api/sessions/${selectedSid}/hack_replay`, { method: "POST" });
+        alert("Hack successful: Duplicated the last message in the database!");
         await loadInbox();
       } catch (e) { alert(e.message); }
     }
