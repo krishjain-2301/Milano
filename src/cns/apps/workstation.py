@@ -148,15 +148,40 @@ class Workstation:
         self.upload_prekeys()
         return user
 
-    def wipe(self) -> None:
+    def wipe(self) -> dict:
+        caller_id = self.user_id
+        if not caller_id:
+            profile = self.root / "profile.json"
+            if profile.exists():
+                try:
+                    caller_id = json.loads(profile.read_text()).get("user_id")
+                except Exception:
+                    caller_id = None
+        hub_result: dict = {"ok": False}
+        try:
+            r = self.client.post(
+                "/users/wipe",
+                json={"caller_id": caller_id, "keep_user_id": caller_id},
+                timeout=30.0,
+            )
+            if r.status_code < 400:
+                hub_result = r.json()
+            else:
+                hub_result = {"ok": False, "detail": r.text}
+        except Exception as exc:
+            hub_result = {"ok": False, "detail": str(exc)}
         self.keys = None
         self.user_id = None
         self.username = None
         self.sessions.clear()
+        if "Authorization" in self.client.headers:
+            del self.client.headers["Authorization"]
         import shutil
+
         if self.root.exists():
             shutil.rmtree(self.root, ignore_errors=True)
         self.root.mkdir(parents=True, exist_ok=True)
+        return {"local_wiped": True, "hub": hub_result}
 
     def _need(self) -> IdentityKeySet:
         if not self.keys or not self.user_id:
@@ -495,8 +520,7 @@ def create_app(name: str, port: int) -> FastAPI:
 
     @app.post("/api/wipe")
     def api_wipe():
-        ws.wipe()
-        return {"ok": True}
+        return ws.wipe()
 
     @app.get("/api/state")
     def state():
@@ -584,6 +608,23 @@ def create_app(name: str, port: int) -> FastAPI:
 
         results = evaluate()
         return {"results": results, "table": comparison_table(results)}
+
+    @app.get("/api/pipeline/stages")
+    def api_pipeline_stages():
+        from cns.eval.pipeline_sim import stage_catalog
+
+        return {"stages": stage_catalog()}
+
+    @app.post("/api/pipeline/simulate")
+    async def api_pipeline_simulate(request: Request):
+        from cns.eval.pipeline_sim import simulate_pipeline
+
+        try:
+            data = await request.json()
+        except Exception:
+            data = {}
+        text = (data or {}).get("plaintext") or "Hello Bob"
+        return simulate_pipeline(text)
 
     @app.get("/api/sessions/{sid}/download/{file_id}")
     def api_dl(sid: str, file_id: str):

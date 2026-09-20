@@ -290,3 +290,27 @@ def get_prekey(request: Request, peer_id: str):
     if not pk:
         raise HTTPException(404, "no prekeys available")
     return pk
+
+
+@app.post("/users/wipe")
+async def wipe_users(request: Request):
+    """
+    Wipe hub registration data.
+    - Removes all OTHER usernames and their sessions/messages/prekeys.
+    - Also removes the calling user so they can re-register after a local vault wipe.
+    """
+    body = await request.json()
+    keep_user_id = body.get("keep_user_id")  # unused for final delete; kept for API clarity
+    caller_id = body.get("caller_id") or keep_user_id
+    removed_others = db.purge_users_except(caller_id)
+    removed_self = None
+    if caller_id:
+        u = db.get_user(caller_id)
+        if u:
+            removed_self = u["username"]
+            db.delete_user_cascade(caller_id)
+    return {
+        "ok": True,
+        "removed_others": removed_others,
+        "removed_self": removed_self,
+    }

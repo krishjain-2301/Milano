@@ -197,3 +197,35 @@ class CoordinatorDB:
             with self.conn:
                 self.conn.execute("DELETE FROM prekeys WHERE id = ?", (row["id"],))
             return dict(row)
+
+    def delete_user_cascade(self, user_id: str) -> None:
+        """Remove a user and all hub data owned by or involving them."""
+        with self._lock, self.conn:
+            sess_ids = [
+                r["session_id"]
+                for r in self.conn.execute(
+                    "SELECT session_id FROM sessions WHERE initiator_id = ? OR responder_id = ?",
+                    (user_id, user_id),
+                )
+            ]
+            for sid in sess_ids:
+                self.conn.execute("DELETE FROM messages WHERE session_id = ?", (sid,))
+                self.conn.execute("DELETE FROM files WHERE session_id = ?", (sid,))
+                self.conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
+            self.conn.execute("DELETE FROM messages WHERE sender_id = ? OR receiver_id = ?", (user_id, user_id))
+            self.conn.execute("DELETE FROM files WHERE sender_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM prekeys WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM tokens WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM challenges WHERE user_id = ?", (user_id,))
+            self.conn.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
+
+    def purge_users_except(self, keep_user_id: str | None) -> list[str]:
+        """Delete every registered user except keep_user_id. Returns removed usernames."""
+        removed: list[str] = []
+        users = self.list_users()
+        for u in users:
+            if keep_user_id and u["user_id"] == keep_user_id:
+                continue
+            removed.append(u["username"])
+            self.delete_user_cascade(u["user_id"])
+        return removed
